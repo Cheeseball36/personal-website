@@ -1,0 +1,17 @@
+# Source documents (the resume has a phone number) — never publish
+pre-build-files/
+
+# Secrets
+config.json
+.env
+
+# Tooling
+node_modules/
+__pycache__/
+.claude/
+
+# OS / editor
+Thumbs.db
+.DS_Store
+desktop.ini
+.vscode/
