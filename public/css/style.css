@@ -32,7 +32,7 @@
   --muted: #8a857b;
   --line: rgba(31, 29, 26, 0.12);
   --card: rgba(31, 29, 26, 0.04);
-  --glow: rgba(255, 255, 255, 0.95);
+  --glow: rgba(255, 255, 255, 0.6);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -44,7 +44,7 @@
     --muted: #7d786e;
     --line: rgba(239, 236, 228, 0.12);
     --card: rgba(239, 236, 228, 0.045);
-    --glow: rgba(255, 222, 173, 0.07);
+    --glow: rgba(255, 222, 173, 0.045);
   }
 }
 
