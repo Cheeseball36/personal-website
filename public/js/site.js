@@ -10,25 +10,33 @@
 
   var x = 0;
   var y = 0;
+  var inside = false; // is the mouse currently over the page?
   var queued = false;
 
   function paint() {
+    queued = false;
+    if (!inside) return; // the mouse left before this frame ran
     glow.style.setProperty("--x", x + "px");
     glow.style.setProperty("--y", y + "px");
     glow.classList.add("on");
-    queued = false;
+  }
+
+  function turnOff() {
+    inside = false;
+    glow.classList.remove("on");
   }
 
   window.addEventListener("pointermove", function (e) {
+    if (e.pointerType !== "mouse") return; // ignore fingers and pens
     x = e.clientX;
     y = e.clientY;
+    inside = true;
     if (!queued) {
       queued = true;
       requestAnimationFrame(paint);
     }
   });
 
-  document.addEventListener("mouseleave", function () {
-    glow.classList.remove("on");
-  });
+  document.documentElement.addEventListener("pointerleave", turnOff);
+  window.addEventListener("blur", turnOff);
 })();

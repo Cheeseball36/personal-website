@@ -29,9 +29,9 @@
   --bg: #f7f5f0;
   --text: #55514a;
   --strong: #1f1d1a;
-  --muted: #8a857b;
+  --muted: #6e6a61;
   --line: rgba(31, 29, 26, 0.12);
-  --card: rgba(31, 29, 26, 0.04);
+  --card-hover-bg: rgba(31, 29, 26, 0.04);
   --glow: rgba(255, 255, 255, 0.6);
 }
 
@@ -41,9 +41,9 @@
     --bg: #1c1b19;
     --text: #aba699;
     --strong: #efece4;
-    --muted: #7d786e;
+    --muted: #908b80;
     --line: rgba(239, 236, 228, 0.12);
-    --card: rgba(239, 236, 228, 0.045);
+    --card-hover-bg: rgba(239, 236, 228, 0.045);
     --glow: rgba(255, 222, 173, 0.045);
   }
 }
@@ -64,10 +64,9 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: "Lato", system-ui, sans-serif;
-  font-size: 17px;
+  font-size: 1.0625rem; /* 17px at the default browser setting */
   line-height: 1.7;
   -webkit-font-smoothing: antialiased;
-  animation: fade-in 1.2s ease both;
 }
 
 @keyframes fade-in {
@@ -104,7 +103,10 @@ body {
   z-index: 1;
   max-width: 640px;
   margin: 0 auto;
-  padding: 96px 24px 96px;
+  padding: 96px 24px;
+  /* The fade-in lives here, not on <body>: an animated transform on an
+     ancestor of .glow would make its fixed position scroll with the page. */
+  animation: fade-in 1.2s ease both;
 }
 
 /* ---------- Text ---------- */
@@ -124,7 +126,7 @@ p {
 a {
   color: var(--strong);
   text-decoration: underline;
-  text-decoration-color: var(--line);
+  text-decoration-color: var(--muted);
   text-decoration-thickness: 1px;
   text-underline-offset: 4px;
   transition: text-decoration-color 0.15s ease, color 0.15s ease;
@@ -137,6 +139,20 @@ a:hover {
   outline: 2px solid var(--strong);
   outline-offset: 3px;
   border-radius: 4px;
+}
+
+/* Read by screen readers, not shown on screen */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.nowrap {
+  white-space: nowrap;
 }
 
 /* ---------- Header ---------- */
@@ -179,10 +195,14 @@ section > h2 {
 
 .role {
   color: var(--muted);
-  margin-bottom: 1.2em;
 }
 
-/* ---------- Logo links ---------- */
+/* keep the gap between sections even, whatever a section ends with */
+section > :last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- Social logo links ---------- */
 .social {
   display: flex;
   gap: 20px;
@@ -192,18 +212,99 @@ section > h2 {
 }
 .social a {
   display: block;
+  /* bigger tap area without moving the icons */
+  padding: 6px;
+  margin: -6px;
   color: var(--muted);
   transition: color 0.15s ease, transform 0.15s ease;
 }
-.social a:hover {
-  color: var(--strong);
-  transform: translateY(-2px);
+@media (hover: hover) {
+  .social a:hover {
+    color: var(--strong);
+    transform: translateY(-2px);
+  }
 }
 .social svg {
   display: block;
   width: 22px;
   height: 22px;
   fill: currentColor;
+}
+
+/* ---------- Experience cards ---------- */
+.cards {
+  list-style: none;
+  margin: 0 -16px;
+  padding: 0;
+}
+
+.card {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 4px 16px;
+  padding: 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  text-decoration: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.card-date {
+  color: var(--muted);
+  font-size: 0.88em;
+  padding-top: 0.15em;
+}
+
+.card-body > span {
+  display: block;
+}
+
+.card-title {
+  font-weight: 700;
+  color: var(--strong);
+}
+
+.card-arrow {
+  display: inline-block;
+  width: 0.62em;
+  height: 0.62em;
+  margin-left: 2px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--muted);
+  transition: transform 0.2s ease, color 0.2s ease;
+}
+
+.card-sub {
+  color: var(--muted);
+}
+
+.card-text {
+  margin-top: 8px;
+}
+
+@media (hover: hover) {
+  .card:hover {
+    background: var(--card-hover-bg);
+    border-color: var(--line);
+  }
+  .card:hover .card-arrow {
+    color: var(--strong);
+    transform: translate(2px, -2px);
+  }
+  /* dim the cards that are not being pointed at */
+  .cards:has(.card:hover) .card:not(:hover):not(:focus-visible) {
+    opacity: 0.5;
+  }
+}
+
+.card:focus-visible {
+  background: var(--card-hover-bg);
+  border-color: var(--line);
 }
 
 /* ---------- Footer ---------- */
@@ -221,10 +322,13 @@ section > h2 {
   .site-header {
     margin-bottom: 48px;
   }
+  .card {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  body {
+  .page {
     animation: none;
   }
   .glow {
