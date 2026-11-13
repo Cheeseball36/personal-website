@@ -106,7 +106,7 @@ body {
   padding: 96px 24px;
   /* The fade-in lives here, not on <body>: an animated transform on an
      ancestor of .glow would make its fixed position scroll with the page. */
-  animation: fade-in 1.2s ease both;
+  animation: fade-in 0.9s ease both;
 }
 
 /* ---------- Text ---------- */
@@ -170,6 +170,13 @@ a:hover {
   color: var(--strong);
   text-decoration: none;
 }
+/* away from the home page the name is a way back, so it reads as a link */
+.site-name:not([aria-current="page"]) {
+  color: var(--muted);
+}
+.site-name:not([aria-current="page"]):hover {
+  color: var(--strong);
+}
 
 .site-nav {
   display: flex;
@@ -193,7 +200,8 @@ section > h2 {
   margin-bottom: 16px;
 }
 
-.role {
+.role,
+.meta {
   color: var(--muted);
 }
 
@@ -305,6 +313,74 @@ section > :last-child {
 .card:focus-visible {
   background: var(--card-hover-bg);
   border-color: var(--line);
+}
+
+/* ---------- Rows (writing list) ---------- */
+.rows {
+  list-style: none;
+  margin: 0 -16px;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 16px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: background-color 0.2s ease, border-color 0.2s ease, opacity 0.2s ease;
+}
+
+.row-meta {
+  color: var(--muted);
+  font-size: 0.88em;
+  white-space: nowrap;
+}
+
+@media (hover: hover) {
+  .row:hover {
+    background: var(--card-hover-bg);
+    border-color: var(--line);
+  }
+  .rows:has(.row:hover) .row:not(:hover):not(:focus-visible) {
+    opacity: 0.5;
+  }
+}
+
+.row:focus-visible {
+  background: var(--card-hover-bg);
+  border-color: var(--line);
+}
+
+/* ---------- Project and writing pages ---------- */
+article {
+  margin-bottom: 64px;
+}
+
+article > :last-child {
+  margin-bottom: 0;
+}
+
+article h2 {
+  margin: 2em 0 0.6em;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 32px;
+  color: var(--muted);
+  text-decoration: none;
+}
+.back:hover {
+  color: var(--strong);
+}
+
+main ul:not([class]) {
+  margin: 0 0 1.2em;
+  padding-left: 1.2em;
 }
 
 /* ---------- Footer ---------- */
