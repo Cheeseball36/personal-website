@@ -62,5 +62,11 @@ and look for `Content-Type: font/woff2`.
 ## Not done yet
 
 - All text is Lorem Ipsum placeholder.
-- The GitHub, LinkedIn and email icons on the home page link to `#`.
-- There is no favicon.
+- The email icon on the home page links to `#`.
+
+## Monogram
+
+`brand/monogram.svg` is the square JM mark (scales to any size) and
+`brand/monogram-512.png` is the same mark as a picture for profile photos.
+The site's own icon files are `public/favicon.svg`, `public/favicon.ico` and
+`public/apple-touch-icon.png`.
