@@ -17,6 +17,9 @@ public/                  everything that goes on the server
   css/style.css          all styles; colors are the variables at the top
   js/site.js             the light that follows the cursor
   fonts/                 Lato (SIL Open Font License, see OFL.txt)
+  contact/               contact form, plus the sent / not-sent pages
+contact/                 the program behind the form (Go); not uploaded with the site
+brand/                   JM monogram files
 ```
 
 The header and footer are repeated in every page, so a change to the nav has to
@@ -62,7 +65,7 @@ and look for `Content-Type: font/woff2`.
 ## Not done yet
 
 - All text is Lorem Ipsum placeholder.
-- The email icon on the home page links to `#`.
+- The contact form works locally but isn't set up on the server yet (see `contact/README.md`).
 
 ## Monogram
 

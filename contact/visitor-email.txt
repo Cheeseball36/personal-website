@@ -1,0 +1,14 @@
+Hi {name} -
+
+Thanks for using the contact form on my website.
+
+Please reply to this email now, with whatever you wanted to say.
+(Maybe change the subject to what it's really about.)
+
+I'll see your reply and get back to you.
+
+If you didn't fill out the form, someone typed your address by
+mistake. Ignore this and you won't hear from me again.
+
+--
+Jackson Mercuri

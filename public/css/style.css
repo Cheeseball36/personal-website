@@ -383,6 +383,79 @@ main ul:not([class]) {
   padding-left: 1.2em;
 }
 
+/* ---------- Contact form ---------- */
+.contact-form {
+  margin-top: 32px;
+}
+
+.field {
+  margin-bottom: 24px;
+}
+
+.field label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 700;
+  color: var(--strong);
+}
+
+.optional {
+  font-weight: 400;
+  color: var(--muted);
+}
+
+.field input {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  color: var(--strong);
+  background: var(--card-hover-bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  transition: border-color 0.15s ease;
+}
+.field input::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+.field input:focus {
+  outline: none;
+  border-color: var(--strong);
+}
+
+.hint {
+  margin: 6px 0 0;
+  font-size: 0.88em;
+  color: var(--muted);
+}
+
+/* bot trap: off-screen rather than display:none, so naive bots still fill it */
+.trap {
+  position: absolute;
+  left: -9999px;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}
+
+.button {
+  padding: 10px 22px;
+  font: inherit;
+  font-weight: 700;
+  color: var(--bg);
+  background: var(--strong);
+  border: 1px solid var(--strong);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+@media (hover: hover) {
+  .button:hover {
+    opacity: 0.85;
+  }
+}
+
 /* ---------- Footer ---------- */
 .site-footer {
   padding-top: 24px;

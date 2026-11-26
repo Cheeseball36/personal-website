@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Contact · Jackson Mercuri</title>
+  <meta name="description" content="Lorem ipsum dolor sit amet, consectetur adipiscing elit.">
+  <meta name="color-scheme" content="light dark">
+  <meta name="robots" content="noindex">
+  <link rel="icon" href="../favicon.ico" sizes="32x32">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="../apple-touch-icon.png">
+  <link rel="preload" href="../fonts/lato-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../fonts/lato-700-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <div class="glow" aria-hidden="true"></div>
+
+  <div class="page">
+    <header class="site-header">
+      <a class="site-name" href="../index.html">Jackson Mercuri</a>
+      <nav class="site-nav" aria-label="Main">
+        <a href="../projects/index.html">Projects</a>
+        <a href="../writing/index.html">Writing</a>
+        <a href="../interests.html">Interests</a>
+      </nav>
+    </header>
+
+    <main>
+      <section>
+        <h1>Contact</h1>
+        <p class="meta">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
+        <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
+
+        <!-- Root-relative on purpose: the form program lives at the server root. -->
+        <form class="contact-form" action="/cgi-bin/contact" method="post">
+          <div class="field">
+            <label for="name">Your name</label>
+            <input id="name" name="name" type="text" required maxlength="50" autocomplete="name">
+          </div>
+
+          <div class="field">
+            <label for="email">Your email</label>
+            <input id="email" name="email" type="email" required maxlength="254" autocomplete="email" spellcheck="false">
+            <p class="hint">My reply goes here, so it needs to be real.</p>
+          </div>
+
+          <div class="field">
+            <label for="where">Where are you? <span class="optional">(optional)</span></label>
+            <input id="where" name="where" type="text" maxlength="60" placeholder="City, country">
+          </div>
+
+          <div class="field">
+            <label for="human">What is my last name?</label>
+            <input id="human" name="human" type="text" required maxlength="40" autocomplete="off" spellcheck="false">
+            <p class="hint">Proves you're a person, not a bot.</p>
+          </div>
+
+          <!-- Trap for bots: hidden from people and screen readers. Anything typed here is rejected. -->
+          <div class="trap" aria-hidden="true">
+            <label for="hp_x7">Leave this empty</label>
+            <input id="hp_x7" name="hp_x7" type="text" tabindex="-1" autocomplete="off">
+          </div>
+
+          <button class="button" type="submit">Send</button>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      Lorem ipsum dolor sit amet.
+    </footer>
+  </div>
+
+  <script src="../js/site.js"></script>
+</body>
+</html>

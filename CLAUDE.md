@@ -52,8 +52,21 @@ Jackson Mercuri's personal site: static HTML, CSS and a little JavaScript. See
   `prefers-reduced-motion`, and the light ignores touch input.
 - Hover effects go inside `@media (hover: hover)` so they don't stick on phones.
 
+## Contact form program
+
+- `contact/` (repo root, not `public/`) is a Go CGI program for the contact form;
+  see `contact/README.md`. It runs under OpenBSD `httpd` + `slowcgi` and sends
+  through SMTP2GO with a send-only key. The form posts to `/cgi-bin/contact`
+  (root-relative on purpose).
+- Jackson's email address must never appear in `public/`.
+- Windows Smart App Control blocks Go on this PC. Do not change or work around
+  that setting; run Go inside WSL Ubuntu at `~/.local/go/bin/go`. From Git Bash:
+  `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu -- bash -c 'cd "/mnt/c/Users/Jackson Mercuri/projects/personal-website/contact" && GOFLAGS=-buildvcs=false ~/.local/go/bin/go test ./...'`
+- `contact/contact.conf` holds real settings and the API key: never commit it.
+
 ## Preview
 
 `.claude/launch.json` defines a `site` server (Python `http.server` on port 4173
-serving `public/`). The browser pane caches the stylesheet; hard refresh after
+serving `public/`) and `contact-dev` (port 4174: the site plus a working form,
+emails printed to the server log instead of sent). The browser pane caches the stylesheet; hard refresh after
 CSS changes. Check changes in dark, light and at phone width.

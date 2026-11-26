@@ -4,6 +4,11 @@ pre-build-files/
 # Secrets
 config.json
 .env
+contact/contact.conf
+
+# Contact program: local rate-limit log and build output
+contact/dev-data/
+contact/contact
 
 # Tooling
 node_modules/
