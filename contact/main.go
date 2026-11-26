@@ -5,9 +5,10 @@
 // asking them to reply, and Jackson gets a note saying who it was. Jackson's
 // address never appears on the website itself.
 //
-// On the server it runs as a CGI program under OpenBSD httpd + slowcgi.
-// On a computer, `go run . -dev :4174` serves the site from ../public with
-// the form working, printing emails instead of sending them.
+// On the server it runs as a CGI program under OpenBSD httpd + slowcgi and
+// hands email to the server's own mail program (smtpd), which relays it
+// through SMTP2GO. On a computer, `go run . -dev :4174` serves the site from
+// ../public with the form working, printing emails instead of sending them.
 package main
 
 import (
@@ -17,17 +18,20 @@ import (
 	"crypto/sha256"
 	_ "embed"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log"
+	"mime"
+	"mime/quotedprintable"
 	"net"
 	"net/http"
 	"net/http/cgi"
 	"net/mail"
 	"net/netip"
+	"net/smtp"
+	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -69,9 +73,10 @@ type Config struct {
 	ReplyTo  string // optional: where replies go, if not the From address
 	NotifyTo string // who gets told about each new contact
 	LastName string // the answer to "What is my last name?"
-	APIKey   string // SMTP2GO send-only API key
+	SMTPAddr string // the server's own mail program, which relays through SMTP2GO
+	Proxy    string // address of relayd; requests from it carry the visitor's IP in X-Forwarded-For
 	DataDir  string // writable folder for the rate-limit log
-	DryRun   bool   // print emails instead of sending them
+	DryRun   bool   // write emails to a file instead of sending them
 }
 
 func loadConfig(path string) (Config, error) {
@@ -80,7 +85,7 @@ func loadConfig(path string) (Config, error) {
 		return Config{}, err
 	}
 	defer f.Close()
-	c := Config{}
+	c := Config{SMTPAddr: "127.0.0.1:25"}
 	sc := bufio.NewScanner(f)
 	for n := 1; sc.Scan(); n++ {
 		line := strings.TrimSpace(sc.Text())
@@ -104,8 +109,10 @@ func loadConfig(path string) (Config, error) {
 			c.NotifyTo = v
 		case "LAST_NAME":
 			c.LastName = v
-		case "SMTP2GO_API_KEY":
-			c.APIKey = v
+		case "SMTP_ADDR":
+			c.SMTPAddr = v
+		case "PROXY":
+			c.Proxy = v
 		case "DATA_DIR":
 			c.DataDir = v
 		case "DRY_RUN":
@@ -129,8 +136,19 @@ func loadConfig(path string) (Config, error) {
 		return Config{}, fmt.Errorf("%s: FROM, NOTIFY_TO and DATA_DIR are required", path)
 	case strings.TrimSpace(c.LastName) == "":
 		return Config{}, fmt.Errorf("%s: LAST_NAME is required (an empty answer would let bots through)", path)
-	case !c.DryRun && c.APIKey == "":
-		return Config{}, fmt.Errorf("%s: SMTP2GO_API_KEY is required unless DRY_RUN = 1", path)
+	}
+	for key, v := range map[string]string{"FROM": c.From, "NOTIFY_TO": c.NotifyTo, "REPLY_TO": c.ReplyTo} {
+		if v == "" {
+			continue
+		}
+		if _, err := mail.ParseAddress(v); err != nil || strings.ContainsAny(v, "\r\n") {
+			return Config{}, fmt.Errorf("%s: %s is not a valid address: %q", path, key, v)
+		}
+	}
+	if c.Proxy != "" {
+		if _, err := netip.ParseAddr(c.Proxy); err != nil {
+			return Config{}, fmt.Errorf("%s: PROXY must be an IP address", path)
+		}
 	}
 	return c, nil
 }
@@ -245,10 +263,20 @@ func cleanWhere(s string) string {
 
 // clientKey identifies a visitor for the per-visitor limit. IPv6 visitors
 // are grouped by /64, since one home or server usually has a whole /64.
-func clientKey(r *http.Request) string {
+//
+// On the server every request arrives from relayd, which replaces any
+// X-Forwarded-For the visitor sent with their real address. That header is
+// only trusted when the request really comes from relayd (proxy).
+func clientKey(r *http.Request, proxy string) string {
 	host := r.RemoteAddr
 	if h, _, err := net.SplitHostPort(host); err == nil {
 		host = h
+	}
+	if proxy != "" && host == proxy {
+		host = strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+		if _, err := netip.ParseAddr(host); err != nil {
+			return "proxy:unknown" // one shared bucket, so a bad header can't dodge limits
+		}
 	}
 	a, err := netip.ParseAddr(host)
 	if err != nil {
@@ -470,48 +498,99 @@ func (p printMailer) Send(m Message) error {
 	return nil
 }
 
-// smtp2go sends through the SMTP2GO API with a send-only key.
-type smtp2go struct {
-	key    string
-	client *http.Client
-	url    string
+// buildMessage writes a complete plain-text email. Headers are encoded so a
+// name with accents works, and any line break in a header is refused.
+func buildMessage(m Message, now time.Time) ([]byte, error) {
+	from, err := mail.ParseAddress(m.From)
+	if err != nil {
+		return nil, fmt.Errorf("bad From: %w", err)
+	}
+	for _, v := range []string{m.From, m.To, m.ReplyTo, m.Subject} {
+		if strings.ContainsAny(v, "\r\n") {
+			return nil, errors.New("line break in a header")
+		}
+	}
+	_, domain, _ := strings.Cut(from.Address, "@")
+	id := make([]byte, 12)
+	rand.Read(id)
+
+	var b bytes.Buffer
+	header := func(k, v string) { fmt.Fprintf(&b, "%s: %s\r\n", k, v) }
+	header("From", from.String())
+	header("To", m.To)
+	if m.ReplyTo != "" {
+		header("Reply-To", m.ReplyTo)
+	}
+	header("Subject", mime.QEncoding.Encode("utf-8", m.Subject))
+	header("Date", now.Format(time.RFC1123Z))
+	header("Message-ID", "<"+hex.EncodeToString(id)+"@"+domain+">")
+	header("MIME-Version", "1.0")
+	header("Content-Type", "text/plain; charset=utf-8")
+	header("Content-Transfer-Encoding", "quoted-printable")
+	b.WriteString("\r\n")
+	qp := quotedprintable.NewWriter(&b)
+	if _, err := qp.Write([]byte(m.Body)); err != nil {
+		return nil, err
+	}
+	if err := qp.Close(); err != nil {
+		return nil, err
+	}
+	return b.Bytes(), nil
 }
 
-func (s smtp2go) Send(m Message) error {
-	req := map[string]any{
-		"sender":    m.From,
-		"to":        []string{m.To},
-		"subject":   m.Subject,
-		"text_body": m.Body,
-	}
-	if m.ReplyTo != "" {
-		req["custom_headers"] = []map[string]string{{"header": "Reply-To", "value": m.ReplyTo}}
-	}
-	body, _ := json.Marshal(req)
-	r, err := http.NewRequest(http.MethodPost, s.url, bytes.NewReader(body))
+// smtpMailer hands email to the server's own mail program (OpenBSD smtpd),
+// which relays it through SMTP2GO. The SMTP2GO password stays in
+// /etc/mail/secrets, readable only by root, never in the web folder.
+type smtpMailer struct {
+	addr string
+}
+
+func (s smtpMailer) Send(m Message) error {
+	msg, err := buildMessage(m, time.Now())
 	if err != nil {
 		return err
 	}
-	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-Smtp2go-Api-Key", s.key)
-	resp, err := s.client.Do(r)
+	from, _ := mail.ParseAddress(m.From)
+	_, domain, _ := strings.Cut(from.Address, "@")
+
+	conn, err := net.DialTimeout("tcp", s.addr, 10*time.Second)
 	if err != nil {
-		return fmt.Errorf("smtp2go: %w", err)
+		return fmt.Errorf("mail server: %w", err)
 	}
-	defer resp.Body.Close()
-	var out struct {
-		Data struct {
-			Succeeded int    `json:"succeeded"`
-			Failed    int    `json:"failed"`
-			ErrorCode string `json:"error_code"`
-		} `json:"data"`
+	conn.SetDeadline(time.Now().Add(20 * time.Second))
+	host, _, _ := net.SplitHostPort(s.addr)
+	c, err := smtp.NewClient(conn, host)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("mail server: %w", err)
 	}
-	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-	_ = json.Unmarshal(raw, &out)
-	// Only status numbers are logged: the full reply can contain the visitor's address.
-	if resp.StatusCode != http.StatusOK || out.Data.Succeeded != 1 {
-		return fmt.Errorf("smtp2go: not sent (HTTP %d, succeeded %d, failed %d, code %q)",
-			resp.StatusCode, out.Data.Succeeded, out.Data.Failed, out.Data.ErrorCode)
+	defer c.Close()
+	// No STARTTLS: this connection never leaves the server.
+	steps := []func() error{
+		func() error { return c.Hello(domain) },
+		func() error { return c.Mail(from.Address) },
+		func() error { return c.Rcpt(m.To) },
+		func() error {
+			w, err := c.Data()
+			if err != nil {
+				return err
+			}
+			if _, err := w.Write(msg); err != nil {
+				return err
+			}
+			return w.Close()
+		},
+		c.Quit,
+	}
+	for _, step := range steps {
+		if err := step(); err != nil {
+			// The server's reply can quote the address, so only its code is logged.
+			var tpErr *textproto.Error
+			if errors.As(err, &tpErr) {
+				return fmt.Errorf("mail server refused (code %d)", tpErr.Code)
+			}
+			return errors.New("mail server: connection failed")
+		}
 	}
 	return nil
 }
@@ -540,7 +619,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ok, err := h.limiter.noteTry(clientKey(r))
+	ok, err := h.limiter.noteTry(clientKey(r, h.cfg.Proxy))
 	if err != nil {
 		h.logger.Printf("contact: rate log: %v", err)
 		h.fail(w, r, "")
@@ -624,6 +703,16 @@ func (h *Handler) fail(w http.ResponseWriter, r *http.Request, why string) {
 
 // ---------- main ----------
 
+// openCapped opens a file for appending, starting it afresh once it passes
+// 256 KB so it can never fill the disk.
+func openCapped(path string) (*os.File, error) {
+	flags := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+	if info, err := os.Stat(path); err == nil && info.Size() > 256<<10 {
+		flags |= os.O_TRUNC
+	}
+	return os.OpenFile(path, flags, 0o600)
+}
+
 func main() {
 	dev := flag.String("dev", "", "run a local test server on this address, e.g. :4174 (needs DRY_RUN = 1)")
 	site := flag.String("site", "../public", "with -dev: the folder of site files to serve")
@@ -646,9 +735,23 @@ func main() {
 		logger.Fatal(err)
 	}
 
-	var m Mailer = smtp2go{key: cfg.APIKey, client: &http.Client{Timeout: 15 * time.Second},
-		url: "https://api.smtp2go.com/v3/email/send"}
-	if cfg.DryRun {
+	var m Mailer = smtpMailer{addr: cfg.SMTPAddr}
+	if *dev == "" {
+		// On the server, notes go to files in DATA_DIR, where they can be read
+		// without hunting through system logs.
+		if f, err := openCapped(filepath.Join(cfg.DataDir, "contact.log")); err == nil {
+			defer f.Close()
+			logger.SetOutput(io.MultiWriter(os.Stderr, f))
+		}
+		if cfg.DryRun {
+			f, err := openCapped(filepath.Join(cfg.DataDir, "dry-run.txt"))
+			if err != nil {
+				logger.Fatal(err)
+			}
+			defer f.Close()
+			m = printMailer{f}
+		}
+	} else if cfg.DryRun {
 		m = printMailer{os.Stderr}
 	}
 	h := &Handler{cfg: cfg, limiter: &Limiter{dir: cfg.DataDir, now: time.Now}, mailer: m, logger: logger}

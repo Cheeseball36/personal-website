@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -98,8 +100,28 @@ func TestClientKey(t *testing.T) {
 	for in, want := range cases {
 		r := httptest.NewRequest(http.MethodPost, "/", nil)
 		r.RemoteAddr = in
-		if got := clientKey(r); got != want {
+		r.Header.Set("X-Forwarded-For", "9.9.9.9") // ignored: not from the proxy
+		if got := clientKey(r, "127.0.0.1"); got != want {
 			t.Errorf("clientKey(%q) = %q; want %q", in, got, want)
+		}
+	}
+
+	// Through relayd: the visitor's address comes from X-Forwarded-For.
+	proxied := map[string]string{
+		"5.6.7.8":          "5.6.7.8",
+		"2001:db8:9:9::42": "2001:db8:9:9::/64",
+		"":                 "proxy:unknown",
+		"5.6.7.8, 1.1.1.1": "proxy:unknown",
+		"not-an-ip":        "proxy:unknown",
+	}
+	for xff, want := range proxied {
+		r := httptest.NewRequest(http.MethodPost, "/", nil)
+		r.RemoteAddr = "127.0.0.1:40000"
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		if got := clientKey(r, "127.0.0.1"); got != want {
+			t.Errorf("via proxy, X-Forwarded-For %q = %q; want %q", xff, got, want)
 		}
 	}
 }
@@ -128,8 +150,14 @@ func TestLoadConfig(t *testing.T) {
 	if _, err := loadConfig(writeConf(t, base+"LAST_NAME = Mercuri\nDRY_RUN = yes\n")); err == nil {
 		t.Error("DRY_RUN = yes accepted")
 	}
-	if _, err := loadConfig(writeConf(t, base+"LAST_NAME = Mercuri\n")); err == nil {
-		t.Error("real sending without an API key accepted")
+	if _, err := loadConfig(writeConf(t, base+"LAST_NAME = Mercuri\nPROXY = relayd\n")); err == nil {
+		t.Error("PROXY that isn't an IP accepted")
+	}
+	if _, err := loadConfig(writeConf(t, "FROM = not an address\nNOTIFY_TO = me@b.com\nDATA_DIR = d\nLAST_NAME = Mercuri\n")); err == nil {
+		t.Error("bad FROM accepted")
+	}
+	if c, err := loadConfig(writeConf(t, base+"LAST_NAME = Mercuri\n")); err != nil || c.SMTPAddr != "127.0.0.1:25" {
+		t.Errorf("default SMTP_ADDR wrong: %q, %v", c.SMTPAddr, err)
 	}
 	c, err := loadConfig(writeConf(t, base+"LAST_NAME = \"Mercuri\"\nDRY_RUN = 1\n"))
 	if err != nil || c.LastName != "Mercuri" {
@@ -410,29 +438,120 @@ func TestLogStoresNoPlainAddresses(t *testing.T) {
 	}
 }
 
-func TestSMTP2GOResult(t *testing.T) {
-	cases := map[string]bool{
-		`{"data":{"succeeded":1,"failed":0}}`:          true,
-		`{"data":{"succeeded":0,"failed":0}}`:          false,
-		`{"data":{"succeeded":0,"failed":1}}`:          false,
-		`{"data":{"error_code":"E_ApiResponseCodes"}}`: false,
-		`not json`: false,
+func TestBuildMessage(t *testing.T) {
+	m := Message{From: "Jackson Mercuri <jackson@example.com>", To: "ada@example.com",
+		ReplyTo: "me+site@gmail.com", Subject: "Contact form: José", Body: "Hi José -\n\nLine two.\n"}
+	b, err := buildMessage(m, time.Date(2026, 11, 26, 9, 0, 0, 0, time.UTC))
+	if err != nil {
+		t.Fatal(err)
 	}
-	for body, want := range cases {
-		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Header.Get("X-Smtp2go-Api-Key") != "k" {
-				w.WriteHeader(http.StatusUnauthorized)
+	s := string(b)
+	for _, want := range []string{
+		"From: \"Jackson Mercuri\" <jackson@example.com>\r\n",
+		"To: ada@example.com\r\n",
+		"Reply-To: me+site@gmail.com\r\n",
+		"Subject: =?utf-8?q?Contact_form:_Jos=C3=A9?=\r\n",
+		"Date: Thu, 26 Nov 2026 09:00:00 +0000\r\n",
+		"@example.com>\r\n", // Message-ID on the sender's domain
+		"Content-Type: text/plain; charset=utf-8\r\n",
+		"\r\n\r\nHi Jos=C3=A9 -\r\n\r\nLine two.\r\n",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("message lacks %q:\n%s", want, s)
+		}
+	}
+	for _, bad := range []Message{
+		{From: m.From, To: "a@b.com\r\nBcc: x@y.com", Subject: "x"},
+		{From: m.From, To: "a@b.com", Subject: "x\nBcc: x@y.com"},
+		{From: "nonsense", To: "a@b.com"},
+	} {
+		if _, err := buildMessage(bad, time.Now()); err == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+}
+
+// fakeSMTP is a tiny mail server for tests. It answers every command with
+// the given code for RCPT (to test refusals) and records what it receives.
+func fakeSMTP(t *testing.T, rcptCode int) (addr string, got chan string) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	got = make(chan string, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		tp := textproto.NewConn(conn)
+		tp.PrintfLine("220 test")
+		var log strings.Builder
+		for {
+			line, err := tp.ReadLine()
+			if err != nil {
+				got <- log.String()
 				return
 			}
-			io.WriteString(w, body)
-		}))
-		err := smtp2go{key: "k", client: srv.Client(), url: srv.URL}.Send(Message{From: "a@b.com", To: "c@d.com"})
-		srv.Close()
-		if (err == nil) != want {
-			t.Errorf("reply %s: err = %v", body, err)
+			log.WriteString(line + "\n")
+			cmd := strings.ToUpper(strings.SplitN(line, " ", 2)[0])
+			switch {
+			case cmd == "EHLO" || cmd == "HELO":
+				tp.PrintfLine("250 test")
+			case cmd == "RCPT":
+				tp.PrintfLine("%d no thanks", rcptCode)
+			case cmd == "DATA":
+				tp.PrintfLine("354 go ahead")
+				data, _ := tp.ReadDotLines()
+				log.WriteString(strings.Join(data, "\n") + "\n")
+				tp.PrintfLine("250 queued")
+			case cmd == "QUIT":
+				tp.PrintfLine("221 bye")
+				got <- log.String()
+				return
+			default:
+				tp.PrintfLine("250 ok")
+			}
 		}
-		if err != nil && strings.Contains(err.Error(), "c@d.com") {
-			t.Errorf("error message contains the address: %v", err)
+	}()
+	return ln.Addr().String(), got
+}
+
+func TestSMTPMailerSends(t *testing.T) {
+	addr, got := fakeSMTP(t, 250)
+	err := smtpMailer{addr: addr}.Send(Message{From: "Jackson <jackson@example.com>", To: "ada@example.com",
+		Subject: "Please reply to this email", Body: "Hi Ada -\n"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := <-got
+	for _, want := range []string{"EHLO example.com", "MAIL FROM:<jackson@example.com>",
+		"RCPT TO:<ada@example.com>", "Subject: Please reply to this email", "Hi Ada -"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("mail server didn't see %q:\n%s", want, s)
 		}
+	}
+}
+
+func TestSMTPMailerRefusal(t *testing.T) {
+	addr, _ := fakeSMTP(t, 550)
+	err := smtpMailer{addr: addr}.Send(Message{From: "jackson@example.com", To: "ada@example.com", Subject: "x"})
+	if err == nil || !strings.Contains(err.Error(), "550") {
+		t.Errorf("want a 550 error, got %v", err)
+	}
+	if err != nil && strings.Contains(err.Error(), "ada@") {
+		t.Errorf("error message contains the address: %v", err)
+	}
+}
+
+func TestSMTPMailerNoServer(t *testing.T) {
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	addr := ln.Addr().String()
+	ln.Close()
+	if err := (smtpMailer{addr: addr}).Send(Message{From: "a@b.com", To: "c@d.com"}); err == nil {
+		t.Error("no error with no mail server")
 	}
 }

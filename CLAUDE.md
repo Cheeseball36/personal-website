@@ -55,14 +55,28 @@ Jackson Mercuri's personal site: static HTML, CSS and a little JavaScript. See
 ## Contact form program
 
 - `contact/` (repo root, not `public/`) is a Go CGI program for the contact form;
-  see `contact/README.md`. It runs under OpenBSD `httpd` + `slowcgi` and sends
-  through SMTP2GO with a send-only key. The form posts to `/cgi-bin/contact`
-  (root-relative on purpose).
+  see `contact/README.md`. It runs under OpenBSD `httpd` + `slowcgi` and hands
+  email to the server's own `smtpd` (127.0.0.1:25), which relays via SMTP2GO;
+  no email password lives in the web chroot. The form posts to
+  `/cgi-bin/contact` (root-relative on purpose). Update it on the server with
+  `contact/install.sh`.
 - Jackson's email address must never appear in `public/`.
 - Windows Smart App Control blocks Go on this PC. Do not change or work around
   that setting; run Go inside WSL Ubuntu at `~/.local/go/bin/go`. From Git Bash:
   `MSYS_NO_PATHCONV=1 wsl.exe -d Ubuntu -- bash -c 'cd "/mnt/c/Users/Jackson Mercuri/projects/personal-website/contact" && GOFLAGS=-buildvcs=false ~/.local/go/bin/go test ./...'`
-- `contact/contact.conf` holds real settings and the API key: never commit it.
+- Real settings live only on the server (`/var/www/contact/contact.conf`); never
+  put them in the repo.
+
+## Server
+
+- `jacksonmercuri.com`, OpenBSD, set up per https://sive.rs/ti. SSH from WSL as
+  `jackson` (key-based); `doas` works without a password, so ask before any
+  admin change.
+- Upload the site from WSL:
+  `rsync -avz --delete --exclude=/pub/ --chmod=D755,F644 public/ jackson@jacksonmercuri.com:/var/www/htdocs/`
+  (`/pub/` is Jackson's shared-files folder: never delete it). Uploading
+  publishes; confirm with Jackson first.
+- `relayd` terminates TLS and forwards to `httpd` on 127.0.0.1:8080.
 
 ## Preview
 

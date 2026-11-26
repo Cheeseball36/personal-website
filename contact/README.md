@@ -32,9 +32,11 @@ The browser is sent to `public/contact/sent.html` or `not-sent.html`.
   tries for an hour and sends for 30 days, and refuses everything if it ever
   grows past 1 MB.
 - Error logs never include visitor addresses.
-- Sending uses an SMTP2GO **send-only** API key. If the server were broken
-  into, the worst case is someone sending email until you revoke the key; it
-  can't read any mailbox.
+- The program never holds an email password. It hands each email to the
+  server's own mail program (`smtpd`), which relays it through SMTP2GO using
+  the password in `/etc/mail/secrets` (readable only by root).
+- Visitors are told apart by their real address, which `relayd` passes along
+  in a header it sets itself (`PROXY` setting).
 
 ## Files
 
@@ -42,10 +44,11 @@ The browser is sent to `public/contact/sent.html` or `not-sent.html`.
 |---|---|
 | `main.go` | The program |
 | `lock_unix.go` | Stops two submissions changing the rate-limit log at once |
+| `install.sh` | Installs or updates the program on the server (see below) |
 | `main_test.go` | Tests |
 | `visitor-email.txt` | The email visitors get. `{name}` is replaced with their name. Rebuild after editing. |
 | `dev.conf` | Settings for testing on your computer (prints emails, never sends) |
-| `contact.conf` | Real settings on the server. **Never commit it** (it is in `.gitignore`). |
+| `contact.conf` | Real settings, only on the server at `/var/www/contact/contact.conf`. **Never commit it.** |
 
 ## Settings (`KEY = VALUE`, one per line)
 
@@ -55,9 +58,10 @@ The browser is sent to `public/contact/sent.html` or `not-sent.html`.
 | `REPLY_TO` | Optional. Where replies go, if not the `FROM` address. |
 | `NOTIFY_TO` | Where your "new contact" notes go. |
 | `LAST_NAME` | The answer to the human check. Not case-sensitive. Required. |
-| `SMTP2GO_API_KEY` | Send-only key from SMTP2GO. |
+| `SMTP_ADDR` | The server's mail program. Default `127.0.0.1:25`. |
+| `PROXY` | `127.0.0.1` on the server: trust `relayd`'s visitor-address header. |
 | `DATA_DIR` | A folder the program can write its rate-limit log to. |
-| `DRY_RUN` | `1` prints emails instead of sending; `0` or blank sends. Anything else is an error. |
+| `DRY_RUN` | `1` writes emails to `DATA_DIR/dry-run.txt` (on the server) instead of sending; `0` or blank sends. Anything else is an error. |
 
 The program refuses to start if a setting is missing or misspelled. The `-dev`
 test server only runs with `DRY_RUN = 1`, and only listens on your own computer.
@@ -77,25 +81,37 @@ Then open http://localhost:4174/contact/ and submit the form. The emails it
 would send are printed in the terminal. In the Claude app this is the
 `contact-dev` preview server.
 
-## On the server (not set up yet)
+## On the server
 
-To be written once the server from https://sive.rs/ti is running. Known pieces:
+Installed on 2026-11-26 and running in test mode (`DRY_RUN = 1`) until
+SMTP2GO approves the domain. The contact page shows an "opens soon" note
+instead of the form until then.
 
-- Build for OpenBSD: `GOOS=openbsd GOARCH=amd64 CGO_ENABLED=0 go build -o contact .`
-  (or `pkg_add go` and build on the server itself).
-- Copy the binary to `/var/www/cgi-bin/contact`, enable `slowcgi`, and add a
-  `location "/cgi-bin/*"` block with `fastcgi` to `httpd.conf`.
-- `httpd` runs programs locked inside `/var/www`, so everything the program
-  needs must be copied in there:
-  - **System libraries.** Go programs on OpenBSD use the system's C library,
-    so the "static" build still needs `/usr/libexec/ld.so` and the libraries
-    that `ldd contact` lists, copied to the same paths under `/var/www`.
-    Re-copy them after every `syspatch` or OpenBSD upgrade.
-  - `/var/www/etc/resolv.conf` and `/var/www/etc/ssl/cert.pem`, to reach
-    SMTP2GO. Re-copy `cert.pem` after upgrades too.
-  - `/var/www/contact/contact.conf`: owned by `root`, group `www`, mode `0640`,
-    in a folder `www` can't write to.
-  - `/var/www/contact/data/`: owned by `www`, mode `0700`.
-  - Nothing under `/var/www/contact` may be inside the website's `htdocs`.
-- In SMTP2GO, verify your domain and create an API key limited to sending.
-- Test with `DRY_RUN = 1` first: the emails then go to httpd's error log.
+| Where | What |
+|---|---|
+| `/var/www/cgi-bin/contact` | The program |
+| `/var/www/contact/contact.conf` | Settings (root:www, 0640) |
+| `/var/www/contact/data/` | Rate-limit log, `contact.log`, `dry-run.txt` (www only) |
+| `/var/www/usr/lib/`, `/var/www/usr/libexec/ld.so` | System libraries the program needs |
+| `/etc/httpd.conf` | `location "/cgi-bin/contact"` in the port 8080 server (backup: `/etc/httpd.conf.before-contact`) |
+
+### Updating the program, or after `syspatch` / an OpenBSD upgrade
+
+From WSL, in this folder:
+
+```bash
+GOOS=openbsd GOARCH=amd64 CGO_ENABLED=0 ~/.local/go/bin/go build -trimpath -o /tmp/contact-openbsd .
+scp /tmp/contact-openbsd install.sh jackson@jacksonmercuri.com:
+ssh jackson@jacksonmercuri.com 'mv contact-openbsd contact-new && doas sh install.sh ~/contact-new'
+```
+
+After an upgrade, just run the last line: it re-copies the system libraries.
+
+### Going live once SMTP2GO approves the domain
+
+1. Check plain email works first: send yourself something from `jackson@jacksonmercuri.com`.
+2. On the server: `doas sed -i 's/^DRY_RUN = 1$/DRY_RUN = 0/' /var/www/contact/contact.conf`
+   (optionally set `REPLY_TO` and `NOTIFY_TO` at the same time).
+3. In `public/contact/index.html`, delete the "opens soon" note and the word
+   `hidden` on the form, then upload the site.
+4. Submit the form with an address you can check, and confirm the email arrives.

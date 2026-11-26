@@ -65,7 +65,7 @@ and look for `Content-Type: font/woff2`.
 ## Not done yet
 
 - All text is Lorem Ipsum placeholder.
-- The contact form works locally but isn't set up on the server yet (see `contact/README.md`).
+- The contact form is installed on the server in test mode, waiting for SMTP2GO to approve the domain (see `contact/README.md`).
 
 ## Monogram
 

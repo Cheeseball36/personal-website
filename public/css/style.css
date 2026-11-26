@@ -424,6 +424,15 @@ main ul:not([class]) {
   border-color: var(--strong);
 }
 
+.form-closed {
+  margin-top: 32px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card-hover-bg);
+  color: var(--strong);
+}
+
 .hint {
   margin: 6px 0 0;
   font-size: 0.88em;

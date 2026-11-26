@@ -33,8 +33,12 @@
         <p class="meta">Lorem ipsum dolor sit amet, consectetur adipiscing elit.</p>
         <p>Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris.</p>
 
+        <!-- Until email sending is approved: the note shows and the form is hidden.
+             To open the form, delete this note and the word "hidden" below. -->
+        <p class="form-closed">The contact form opens soon. Until then, LinkedIn is the best way to reach me.</p>
+
         <!-- Root-relative on purpose: the form program lives at the server root. -->
-        <form class="contact-form" action="/cgi-bin/contact" method="post">
+        <form class="contact-form" action="/cgi-bin/contact" method="post" hidden>
           <div class="field">
             <label for="name">Your name</label>
             <input id="name" name="name" type="text" required maxlength="50" autocomplete="name">
